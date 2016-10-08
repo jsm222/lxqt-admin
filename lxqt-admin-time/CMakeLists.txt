@@ -81,3 +81,12 @@ target_link_libraries(lxqt-admin-time
 
 install(TARGETS lxqt-admin-time RUNTIME DESTINATION bin)
 install(FILES ${DESKTOP_FILES} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+IF(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
+configure_file(
+    "org.lxqt.lxqt-admin-time.policy.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/org.lxqt.lxqt-admin-time.policy"
+    @ONLY
+)
+install(PROGRAMS "lxqt-admin-time-helper" DESTINATION bin)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.lxqt.lxqt-admin-time.policy" DESTINATION "share/polkit-1/actions")
+ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")

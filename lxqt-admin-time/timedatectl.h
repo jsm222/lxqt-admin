@@ -30,7 +30,11 @@
 
 #include <QString>
 #include <QDateTime>
-
+#include <QtCore/QtGlobal>
+#ifdef Q_OS_FREEBSD
+#include <QFile>
+#include <QMessageBox>
+#endif
 class QDBusInterface;
 
 class TimeDateCtl
@@ -38,7 +42,10 @@ class TimeDateCtl
 public:
     explicit TimeDateCtl();
     ~TimeDateCtl();
-
+#ifdef Q_OS_FREEBSD
+    QString execProcess(QString program,QStringList& args) const;
+    void execPkProcess(QStringList& args);
+#endif
     bool useNtp() const;
     bool setUseNtp(bool value, QString& errorMessage);
 
@@ -49,6 +56,7 @@ public:
     bool setTimeZone(QString timeZone, QString& errorMessage);
 
     bool setDateTime(QDateTime dateTime, QString& errorMessage);
+
 
 private:
     QDBusInterface* mIface;
