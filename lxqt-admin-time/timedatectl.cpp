@@ -46,30 +46,13 @@ TimeDateCtl::~TimeDateCtl()
 {
     delete mIface;
 }
-#ifdef Q_OS_FREEBSD
-void TimeDateCtl::execPkProcess(QStringList &args)
-{
-    QProcess process;
-    QStringList defaultArgs;
-    defaultArgs << QStringLiteral("--disable-internal-agent");
-    defaultArgs << QStringLiteral("/usr/local/bin/lxqt-admin-time-helper");
-    defaultArgs << args;
-    process.start("pkexec",defaultArgs);
-    process.waitForFinished(-1);
-}
 
-    QString TimeDateCtl::execProcess(QString program,QStringList &args) const {
-    QProcess process;
-    process.start(program,args);
-    process.waitForFinished(-1);
-    return process.readAllStandardOutput();
-}
-#endif
+
 QString TimeDateCtl::timeZone() const
 {
-    #ifdef Q_OS_LINUX
+#ifdef Q_OS_LINUX
     return mIface->property("Timezone").toString();
-    #elif defined(Q_OS_FREEBSD)
+#elif defined(Q_OS_FREEBSD)
     QFile tzFile("/var/db/zoneinfo");
     if (!tzFile.open(QFile::ReadOnly | QFile::Text)) return "Unknown";
     QTextStream in(&tzFile);
@@ -80,7 +63,7 @@ QString TimeDateCtl::timeZone() const
 
 bool TimeDateCtl::setTimeZone(QString timeZone, QString& errorMessage)
 {
-    #ifdef Q_OS_LINUX
+#ifdef Q_OS_LINUX
     mIface->call("SetTimezone", timeZone, true);
     QDBusError err = mIface->lastError();
     if(err.isValid())
@@ -89,19 +72,40 @@ bool TimeDateCtl::setTimeZone(QString timeZone, QString& errorMessage)
         return false;
     }
     return true;
-    #elif defined(Q_OS_FREEBSD)
-    QStringList args;
-    args << QStringLiteral("SetTimezone");
-    args     << timeZone;
-    execPkProcess(args);
-    return true;
-    #endif
+#elif defined(Q_OS_FREEBSD)
+        FILE		*f;
+        char		path_zoneinfo_file[MAXPATHLEN];
 
+        if ((size_t)snprintf(path_zoneinfo_file, sizeof(path_zoneinfo_file),
+            "%s/%s",  _PATH_ZONEINFO, timeZone.toStdString().c_str()) >= sizeof(path_zoneinfo_file)) {
+            errorMessage =  QObject::tr("%s/%s name too long").arg(_PATH_ZONEINFO).arg(timeZone);
+            return false;
+        }
+    if (access(path_zoneinfo_file, R_OK) != 0) {
+               errorMessage =  QObject::tr("Error: Cannot access %1 %2").arg(path_zoneinfo_file).arg(strerror(errno));
+               return false;
+            }
+            if (unlink(_PATH_LOCALTIME) < 0 && errno != ENOENT) {
+                errorMessage =  QObject::tr("Error: Could not unlink %1 %2").arg(_PATH_LOCALTIME).arg(strerror(errno));
+                return false;
+            }
+            if (symlink(path_zoneinfo_file, _PATH_LOCALTIME) < 0) {
+                errorMessage = QObject::tr("Error: Cannot create symbolic link %1 to %2: %3").arg(path_zoneinfo_file).arg(_PATH_LOCALTIME).arg(strerror(errno));
+                return false;
+            }
+            if ((f = fopen(_PATH_DB, "w")) != NULL) {
+                        fprintf(f, "%s\n", timeZone.toStdString().c_str());
+                        fclose(f);
+
+                }
+    return true;
+#endif
 }
 
 bool TimeDateCtl::setDateTime(QDateTime dateTime, QString& errorMessage)
 {
-    #ifdef Q_OS_LINUX
+
+#ifdef Q_OS_LINUX
     // the timedatectl dbus service accepts "usec" input.
     // Qt can only get "msec"  => convert to usec here.
     mIface->call("SetTime", dateTime.toMSecsSinceEpoch() * 1000, false, true);
@@ -111,26 +115,36 @@ bool TimeDateCtl::setDateTime(QDateTime dateTime, QString& errorMessage)
         errorMessage = err.message();
         return false;
     }
-    #elif defined(Q_OS_FREEBSD)
-    QStringList args;
-    args << QStringLiteral("SetTime");
-    args << dateTime.toString("yyyyMMddhhmm.ss");
-    execPkProcess(args);
-    #endif
+#elif defined(Q_OS_FREEBSD)
+    struct timeval time;
+    struct timezone tzp;
+    gettimeofday(&time,&tzp);
+    time.tv_sec = dateTime.toMSecsSinceEpoch()/1000;
+    settimeofday(&time,&tzp);
+#endif
     return true;
 }
 
 bool TimeDateCtl::useNtp() const
 {
-    #ifdef Q_OS_LINUX
+#ifdef Q_OS_LINUX
     return mIface->property("NTP").toBool();
-    #elif defined(Q_OS_FREEBSD)
-    QStringList args;
-    args << QStringLiteral("ntpd_enable");
-    QString out = TimeDateCtl::execProcess(QStringLiteral("/usr/sbin/sysrc"),args);
-    out.chop(1);
-    return out.endsWith("YES",Qt::CaseInsensitive);
-    #endif
+#elif defined(Q_OS_FREEBSD)
+    QProcess process;
+    QStringList args = QStringList();
+    args  << QStringLiteral("/etc/rc.d/ntpd") << QStringLiteral("rcvar");
+    process.start(QStringLiteral("/bin/sh"),args);
+    process.waitForFinished(-1);
+    QString t = process.readAllStandardOutput();
+    QStringList o = t.split("\n");
+    for (QStringList::iterator it = o.begin();
+          it != o.end(); ++it) {
+         QString current = *it;
+         if(!current.startsWith("#") && current.contains(QString("ntpd_enable"),Qt::CaseInsensitive) && current.contains(QString("yes"),Qt::CaseInsensitive)) {
+         return true;
+        }
+     }
+#endif
     return false;
 }
 
@@ -145,11 +159,7 @@ bool TimeDateCtl::setUseNtp(bool value, QString& errorMessage)
         return false;
     }
 #elif defined(Q_OS_FREEBSD)
-    QStringList args;
-    args << QStringLiteral("SetNTP");
-    args << ((value) ? "True" : "False");
-    execPkProcess(args);
-
+//TODO implement setUseNtp
 #endif
     return true;
 
@@ -158,17 +168,16 @@ bool TimeDateCtl::setUseNtp(bool value, QString& errorMessage)
 
 bool TimeDateCtl::localRtc() const
 {
-    #ifdef Q_OS_LINUX
+#ifdef Q_OS_LINUX
     return mIface->property("LocalRTC").toBool();
-    #endif
-    #ifdef Q_OS_FREEBSD
+#elif defined(Q_OS_FREEBSD)
     return QFile("/etc/wall_cmos_clock").exists();
-    #endif
+#endif
 }
 
 bool TimeDateCtl::setLocalRtc(bool value, QString& errorMessage)
 {
-    #ifdef Q_OS_LINUX
+#ifdef Q_OS_LINUX
     mIface->call("SetLocalRTC", value, false, true);
     QDBusError err = mIface->lastError();
     if(err.isValid())
@@ -176,21 +185,8 @@ bool TimeDateCtl::setLocalRtc(bool value, QString& errorMessage)
         errorMessage = err.message();
         return false;
     }
-    #endif
-    #ifdef Q_OS_FREEBSD
-    QStringList args;
-    args << QStringLiteral("SetLocalRTC");
-    args << ((value) ? "True" : "False");
-    execPkProcess(args);
-
-    if(!value) {
-    QMessageBox * msg = new QMessageBox{QMessageBox::Information, QObject::tr("lxqt-admin-user")
-        , QObject::tr("Change to RTC in UTC requires a reboot")};
-    msg->setAttribute(Qt::WA_DeleteOnClose, true);
-    msg->show();
-    }
-
-
-    #endif
+#elif defined(Q_OS_FREEBSD)
+//TODO implement setLocalRTC
+#endif
     return true;
 }

@@ -33,7 +33,18 @@
 #include <QtCore/QtGlobal>
 #ifdef Q_OS_FREEBSD
 #include <QFile>
-#include <QMessageBox>
+extern "C" {
+#include <errno.h>
+#include <unistd.h>
+#include <sys/param.h>
+#include <sys/fcntl.h>
+#include <sys/time.h>
+}
+#define	_PATH_ZONETAB		"/usr/share/zoneinfo/zone.tab"
+#define	_PATH_ZONEINFO		"/usr/share/zoneinfo"
+#define	_PATH_LOCALTIME		"/etc/localtime"
+#define	_PATH_DB		"/var/db/zoneinfo"
+#define	_PATH_WALL_CMOS_CLOCK	"/etc/wall_cmos_clock"
 #endif
 class QDBusInterface;
 
@@ -42,10 +53,6 @@ class TimeDateCtl
 public:
     explicit TimeDateCtl();
     ~TimeDateCtl();
-#ifdef Q_OS_FREEBSD
-    QString execProcess(QString program,QStringList& args) const;
-    void execPkProcess(QStringList& args);
-#endif
     bool useNtp() const;
     bool setUseNtp(bool value, QString& errorMessage);
 
