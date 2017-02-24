@@ -33,7 +33,6 @@
 #include <QDBusConnection>
 #include <QMessageBox>
 
-
 TimeDateCtl::TimeDateCtl()
 {
     mIface = new QDBusInterface(QStringLiteral("org.freedesktop.timedate1"),
@@ -120,7 +119,11 @@ bool TimeDateCtl::setDateTime(QDateTime dateTime, QString& errorMessage)
     struct timezone tzp;
     gettimeofday(&time,&tzp);
     time.tv_sec = dateTime.toMSecsSinceEpoch()/1000;
-    settimeofday(&time,&tzp);
+    if(settimeofday(&time,&tzp) != 0) {
+    errorMessage = strerror(errno);
+    return false;
+    }
+    return true;
 #endif
     return true;
 }
@@ -159,7 +162,19 @@ bool TimeDateCtl::setUseNtp(bool value, QString& errorMessage)
         return false;
     }
 #elif defined(Q_OS_FREEBSD)
-//TODO implement setUseNtp
+    QFile file("/etc/rc.conf");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+    QString ntpd_enable = "ntpd_enable=";
+    ntpd_enable.append((value ? "\"YES\"" : "\"NO\""));
+    QTextStream sout(&file);
+    sout << "#Added by lxqt-admin-time\n";
+    sout << ntpd_enable << "\n";
+    file.close();
+    return true;
+    } else {
+    errorMessage = QString(QObject::tr("Cannot open /etc/rc.conf for writing."));
+    return false;
+    }
 #endif
     return true;
 
@@ -171,7 +186,7 @@ bool TimeDateCtl::localRtc() const
 #ifdef Q_OS_LINUX
     return mIface->property("LocalRTC").toBool();
 #elif defined(Q_OS_FREEBSD)
-    return QFile("/etc/wall_cmos_clock").exists();
+    return QFileInfo("/etc/wall_cmos_clock").exists();
 #endif
 }
 
@@ -186,7 +201,35 @@ bool TimeDateCtl::setLocalRtc(bool value, QString& errorMessage)
         return false;
     }
 #elif defined(Q_OS_FREEBSD)
-//TODO implement setLocalRTC
+/*
+ * Absence of /etc/wall_cmos_clock indicates RTC is UTC.
+ * Presence of /etc/wall_cmos_clock indicates RTC is localltime.
+ * when value is true it should set RTC to localtime, e.g create /etc/wall_cmos_clock
+*/
+QFileInfo wall_cmos_clock_info("/etc/wall_cmos_clock");
+    if(value==false) {
+        if (wall_cmos_clock_info.exists() && wall_cmos_clock_info.isFile()) {
+               QFile wall_cmos_clock("/etc/wall_cmos_clock");
+               if(wall_cmos_clock.remove()) {
+               return true;
+               } else {
+               errorMessage = QObject::tr("Could not remove /etc/wall_cmos_clock");
+               return false;
+               }
+        } else {
+            return true; //State already correct
+        }
+    } else if(value) {
+        QFile wall_cmos_clock("/etc/wall_cmos_clock");
+        if(wall_cmos_clock.open(QIODevice::WriteOnly)) {
+        wall_cmos_clock.close();
+        return true;
+        } else {
+        errorMessage = QObject::tr("Cannot open /etc/wall_cmos_clock for writing.");
+        return false;
+        }
+
+    }
 #endif
-    return true;
+    return false;
 }

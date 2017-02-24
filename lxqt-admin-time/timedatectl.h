@@ -33,6 +33,7 @@
 #include <QtCore/QtGlobal>
 #ifdef Q_OS_FREEBSD
 #include <QFile>
+#include <QFileInfo>
 extern "C" {
 #include <errno.h>
 #include <unistd.h>

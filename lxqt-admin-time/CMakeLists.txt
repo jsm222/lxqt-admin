@@ -1,4 +1,4 @@
-project(lxqt-admin-time)
+Project(lxqt-admin-time)
 
 # build static helper class first
 include_directories (
@@ -54,7 +54,15 @@ lxqt_translate_ts(lxqt-admin-time_QM_FILES
     REPO_SUBDIR
         "lxqt-admin/${PROJECT_NAME}"
 )
-
+if(${CMAKE_SYSTEM_NAME} MATCHES  "FreeBSD")
+	set(CMAKE_EXEC_BIN "lxqt-sudo lxqt-admin-time")
+else()
+	set(CMAKE_EXEC_BIN "lxqt-admin-time")
+endif()
+configure_file (
+  "${PROJECT_SOURCE_DIR}/lxqt-admin-time.desktop.0.in"
+  "${PROJECT_SOURCE_DIR}/lxqt-admin-time.desktop.in"
+  )
 lxqt_translate_desktop(DESKTOP_FILES
     SOURCES
     lxqt-admin-time.desktop.in
