@@ -129,10 +129,16 @@ void TimeAdminDialog::saveChangesToSystem()
     }
 
     if(modified.testFlag(DateTimePage::M_LOCAL_RTC))
-    {
+    {              
         if(false == mTimeDateCtl.setLocalRtc(mDateTimeWidget->localRtc(), errorMessage)) {
             QMessageBox::critical(this, tr("Error"), errorMessage);
         }
+#ifdef Q_OS_FREEBSD
+        else {
+            const QString infoMsg = mDateTimeWidget->localRtc() ?  tr("Change RTC to be in localtime requires a reboot") : tr("Change RTC to be in UTC requires a reboot");
+            QMessageBox::information(this,tr("Reboot required"),infoMsg);
+        }
+#endif
     }
 
     // we can only change the date & time explicitly when NTP is disabled.

@@ -77,7 +77,7 @@ bool TimeDateCtl::setTimeZone(QString timeZone, QString& errorMessage)
 
         if ((size_t)snprintf(path_zoneinfo_file, sizeof(path_zoneinfo_file),
             "%s/%s",  _PATH_ZONEINFO, timeZone.toStdString().c_str()) >= sizeof(path_zoneinfo_file)) {
-            errorMessage =  QObject::tr("%s/%s name too long").arg(_PATH_ZONEINFO).arg(timeZone);
+            errorMessage =  QObject::tr("%1/%2 name too long").arg(_PATH_ZONEINFO).arg(timeZone);
             return false;
         }
     if (access(path_zoneinfo_file, R_OK) != 0) {
@@ -120,8 +120,14 @@ bool TimeDateCtl::setDateTime(QDateTime dateTime, QString& errorMessage)
     gettimeofday(&time,&tzp);
     time.tv_sec = dateTime.toMSecsSinceEpoch()/1000;
     if(settimeofday(&time,&tzp) != 0) {
-    errorMessage = strerror(errno);
+    if(errno == EINVAL) {
+    errorMessage = QObject::tr("Invalid time value");
     return false;
+    } else if(errno == EPERM) {
+    errorMessage = QObject::tr("Permission denied");
+    return false;
+    }
+
     }
     return true;
 #endif
@@ -133,6 +139,7 @@ bool TimeDateCtl::useNtp() const
 #ifdef Q_OS_LINUX
     return mIface->property("NTP").toBool();
 #elif defined(Q_OS_FREEBSD)
+//Do not try to parse rc.conf rely on rcvar output of /etc/rc.d/ntpd
     QProcess process;
     QStringList args = QStringList();
     args  << QStringLiteral("/etc/rc.d/ntpd") << QStringLiteral("rcvar");
@@ -167,14 +174,30 @@ bool TimeDateCtl::setUseNtp(bool value, QString& errorMessage)
     QString ntpd_enable = "ntpd_enable=";
     ntpd_enable.append((value ? "\"YES\"" : "\"NO\""));
     QTextStream sout(&file);
+    //Last entry in rc.conf wins. Does not remove or edit old entries.
     sout << "#Added by lxqt-admin-time\n";
     sout << ntpd_enable << "\n";
     file.close();
-    return true;
     } else {
     errorMessage = QString(QObject::tr("Cannot open /etc/rc.conf for writing."));
     return false;
     }
+    if(value) {
+    //Invoke ntpd with -g and -q to allow very skew clocks to be set automatically as expected.
+    QProcess process0;
+    QStringList args0 = QStringList();
+    args0  << QStringLiteral("-g")<< QStringLiteral("-q");
+    process0.start(QStringLiteral("/usr/sbin/ntpd"),args0);
+    process0.waitForFinished(-1);
+    }
+    //Start/stop ntpd
+    QProcess process1;
+    QStringList args1 = QStringList();
+    args1  << QStringLiteral("/etc/rc.d/ntpd") << ((value) ? QStringLiteral("start") : QStringLiteral("onestop"));
+    process1.start(QStringLiteral("/bin/sh"),args1);
+    process1.waitForFinished(-1);
+    return true;
+
 #endif
     return true;
 
